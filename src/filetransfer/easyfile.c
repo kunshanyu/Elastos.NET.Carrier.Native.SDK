@@ -77,7 +77,7 @@ void notify_state_changed_cb(ElaFileTransfer *ft, FileTransferConnection state,
         file->callbacks.state_changed(state, file->callbacks_context);
 
     // if (state >= FileTransferConnection_closed)
-//     deref(file);
+    //     deref(file);
 }
 
 static

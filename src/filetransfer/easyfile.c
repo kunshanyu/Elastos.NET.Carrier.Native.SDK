@@ -76,8 +76,8 @@ void notify_state_changed_cb(ElaFileTransfer *ft, FileTransferConnection state,
     if (file->callbacks.state_changed)
         file->callbacks.state_changed(state, file->callbacks_context);
 
-    if (state >= FileTransferConnection_closed)
-        deref(file);
+    // if (state >= FileTransferConnection_closed)
+    //     deref(file);
 }
 
 static
@@ -228,7 +228,8 @@ bool notify_data_cb(ElaFileTransfer *ft, const char *fileid, const uint8_t *data
             strcat(tmp, TMP_EXTENSION);
             rename(tmp, file->filename);
 
-            ela_filetransfer_close(file->ft);
+            //ela_filetransfer_close(file->ft);
+            file->ft = NULL;
         }
 
         if (file->callbacks.received)

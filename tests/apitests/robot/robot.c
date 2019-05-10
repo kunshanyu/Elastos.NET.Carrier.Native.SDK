@@ -54,6 +54,10 @@ struct CarrierContextExtra {
     char *bundle;
     char *data;
     int len;
+    int offline_msg_cnt;
+    bool test_off_msg;
+    bool test_off_msgs;
+    struct timeval msg_expiration;
     char gcookie[128];
     int gcookie_len;
     char gfrom[ELA_MAX_ID_LEN + 1];
@@ -67,6 +71,10 @@ static CarrierContextExtra extra = {
     .bundle = NULL,
     .data   = NULL,
     .len    = 0,
+    .offline_msg_cnt = 0,
+    .test_off_msg = false,
+    .test_off_msgs = false,
+    .msg_expiration = {0},
     .gcookie = {0},
     .gcookie_len = 0,
     .gfrom  = {0},
@@ -95,6 +103,26 @@ void print_friend_info(const ElaFriendInfo* info, int order)
     print_user_info(&info->user_info);
     vlogD("        label: %s", info->label);
     vlogD("     presence: %d", info->presence);
+}
+
+static void idle_cb(ElaCarrier *w, void *context)
+{
+    CarrierContextExtra *extra = ((TestContext*)context)->carrier->extra;
+
+    if (extra->test_off_msg || extra->test_off_msgs) {
+        struct timeval now = {0};
+
+        gettimeofday(&now, NULL);
+        if (timercmp(&now, &extra->msg_expiration, >)) {
+            if (extra->test_off_msg) {
+                extra->test_off_msg = false;
+                write_ack("expiration\n");
+            } else {
+                extra->test_off_msgs = false;
+                write_ack("%d\n", extra->offline_msg_cnt);
+            }
+        }
+    }
 }
 
 static void connection_status_cb(ElaCarrier *w, ElaConnectionStatus status,
@@ -234,10 +262,18 @@ static void friend_removed_cb(ElaCarrier* w, const char* friendid, void *context
 static void friend_message_cb(ElaCarrier *w, const char *from,
                              const void *msg, size_t len, void *context)
 {
+    CarrierContextExtra *extra = ((TestContext*)context)->carrier->extra;
+
     vlogD("Received message from %s", from);
     vlogD(" msg: %.*s", len, (const char *)msg);
 
-    write_ack("%.*s\n", len, msg);
+    if (!extra->test_off_msgs) {
+        if (extra->test_off_msg)
+            extra->test_off_msg = false;
+
+        write_ack("%.*s\n", len, msg);
+    } else
+        extra->offline_msg_cnt++;
 }
 
 static void friend_invite_cb(ElaCarrier *w, const char *from, const char *bundle,
@@ -313,7 +349,7 @@ static void peer_list_changed_cb(ElaCarrier *carrier, const char *groupid,
 }
 
 static ElaCallbacks callbacks = {
-    .idle            = NULL,
+    .idle            = idle_cb,
     .connection_status = connection_status_cb,
     .ready           = ready_cb,
     .self_info       = self_info_cb,
@@ -445,6 +481,7 @@ int robot_main(int argc, char *argv[])
     char logfile[PATH_MAX];
     pthread_t tid;
     char *cmd;
+    bool reborn = false;
 
     ElaOptions opts = global_config.shared_options;
     opts.log_level = global_config.robot.loglevel;
@@ -459,8 +496,29 @@ int robot_main(int argc, char *argv[])
         opts.log_file = NULL;
     }
 
-    if (start_cmd_listener(global_config.robot.host, global_config.robot.port) < 0)
+    opts.hive_bootstraps = (HiveBootstrapNode *)calloc(1, sizeof(HiveBootstrapNode) * opts.hive_bootstraps_size);
+    if (!opts.hive_bootstraps) {
+        vlogE("Error: out of memory.");
+        free(opts.bootstraps);
         return -1;
+    }
+
+    for (i = 0; i < (int)opts.hive_bootstraps_size; i++) {
+        HiveBootstrapNode *b = &opts.hive_bootstraps[i];
+        HiveBootstrapNode *node = global_config.hive_bootstraps[i];
+
+        b->ipv4 = node->ipv4;
+        b->ipv6 = node->ipv6;
+        b->port = node->port;
+    }
+
+    if (!reborn) {
+        if (start_cmd_listener(global_config.robot.host, global_config.robot.port) < 0) {
+            free(opts.bootstraps);
+            free(opts.hive_bootstraps);
+            return -1;
+        }
+    }
 
     w = ela_new(&opts, &callbacks, &test_context);
     if (!w) {
@@ -475,6 +533,16 @@ int robot_main(int argc, char *argv[])
     do {
         cmd = read_cmd();
         do_cmd(&test_context, cmd);
+
+        if (strcmp(cmd, "killcarrier") == 0) {
+            pthread_join(tid, NULL);
+            carrier_context.carrier = NULL;
+        }
+
+        if (strcmp(cmd, "reborn") == 0) {
+            reborn = true;
+            goto robot_reborn;
+        }
     } while (strcmp(cmd, "kill"));
 
     pthread_join(tid, NULL);

@@ -45,6 +45,8 @@
 #include "test_context.h"
 #include "test_helper.h"
 
+#define MSG_INACTIVE_TIMEOUT   300
+
 const char *stream_state_name(ElaStreamState state);
 
 #define CHK_ARGS(exp) if (!(exp)) { \
@@ -57,6 +59,10 @@ struct CarrierContextExtra {
     char *bundle;
     char *data;
     int len;
+    int offline_msg_cnt;
+    bool test_off_msg;
+    bool test_off_msgs;
+    struct timeval msg_expiration;
     char gcookie[128];
     int gcookie_len;
     char gfrom[ELA_MAX_ID_LEN + 1];
@@ -524,6 +530,26 @@ static void wkill(TestContext *context, int argc, char *argv[])
 
     vlogI("Kill robot instance.");
     ela_kill(w);
+}
+
+static void reborn(TestContext *context, int argc, char *argv[])
+{
+    CarrierContextExtra *extra = context->carrier->extra;
+    struct timeval now = {0};
+    struct timeval timeout_interval = {0};
+
+    CHK_ARGS(argc == 1 || argc == 2);
+
+    vlogI("Robot is reborn.");
+    if (argc == 1)
+        extra->test_off_msg = true;
+    else
+        extra->test_off_msgs = true;
+
+    gettimeofday(&now, NULL);
+    timeout_interval.tv_sec = MSG_INACTIVE_TIMEOUT;
+    timeout_interval.tv_usec = 0;
+    timeradd(&now, &timeout_interval, &extra->msg_expiration);
 }
 
 static void robot_context_reset(TestContext *context)
@@ -1535,6 +1561,8 @@ static struct command {
     { "freplyinvite", freplyinvite },
     { "freplyinvite_bigdata", freplyinvite_bigdata },
     { "kill",         wkill        },
+    { "killcarrier",  wkill        },
+    { "reborn",       reborn       },
     { "sinit",        sinit        },
     { "srequest",     srequest     },
     { "sreply",       sreply       },

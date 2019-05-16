@@ -130,14 +130,14 @@ static TestContext test_context = {
     .context_reset = test_context_reset
 };
 
-static void test_send_offline_msg_to_friend_base(int count)
+static void send_offmsg_to_friend(int count)
 {
     CarrierContext *wctxt = test_context.carrier;
     char ack[128] = {0};
     char robot_id[ELA_MAX_ID_LEN + 1] = {0};
     char robot_addr[ELA_MAX_ADDRESS_LEN + 1] = {0};
-    int rc = 0;
-    int i = 0;
+    int rc;
+    int i;
 
     test_context.context_reset(&test_context);
 
@@ -145,22 +145,22 @@ static void test_send_offline_msg_to_friend_base(int count)
     CU_ASSERT_EQUAL_FATAL(rc, 0);
     CU_ASSERT_TRUE_FATAL(ela_is_friend(wctxt->carrier, robotid));
 
-    rc = write_cmd("killcarrier\n");
+    rc = write_cmd("killnode\n");
     CU_ASSERT_FATAL(rc > 0);
 
     cond_wait(wctxt->friend_status_cond);
     CU_ASSERT_TRUE(wctxt->friend_status == OFFLINE);
 
-    const char* out = "message-test";
-    for (; i < count; i++) {
+    const char *out = "message-test";
+    for (i = 0; i < count; i++) {
         rc = ela_send_friend_message(wctxt->carrier, robotid, out, strlen(out));
         CU_ASSERT_EQUAL_FATAL(rc, 0);
     }
 
     if (count > 1)
-        rc = write_cmd("reborn msgs\n");
+        rc = write_cmd("startnode bulkmsg\n");
     else
-        rc = write_cmd("reborn\n");
+        rc = write_cmd("startnode\n");
     CU_ASSERT_FATAL(rc > 0);
 
     cond_wait(wctxt->friend_status_cond);
@@ -189,16 +189,16 @@ static void test_send_offline_msg_to_friend_base(int count)
 
 static void test_send_offline_msg_to_friend(void)
 {
-    test_send_offline_msg_to_friend_base(1);
+    send_offmsg_to_friend(1);
 }
 
 static void test_send_offline_msgs_to_friend(void)
 {
-    test_send_offline_msg_to_friend_base(10);
+    send_offmsg_to_friend(10);
 }
 
 static CU_TestInfo cases[] = {
-    { "test_send_offline_msg_to_friend",   test_send_offline_msg_to_friend },
+    { "test_send_offline_msg_to_friend",   test_send_offline_msg_to_friend  },
     { "test_send_offline_msgs_to_friend",  test_send_offline_msgs_to_friend },
     {NULL, NULL }
 };

@@ -45,36 +45,20 @@
 #include "test_helper.h"
 #include "config.h"
 #include "cmd.h"
+#include "robot.h"
 
 static ElaFileTransferInfo file_transfer_info;
 static ElaFileTransferCallbacks file_transfer_cbs;
 
-struct CarrierContextExtra {
-    char userid[ELA_MAX_ID_LEN + 1];
-    char *bundle;
-    char *data;
-    int len;
-    int offline_msg_cnt;
-    bool test_off_msg;
-    bool test_off_msgs;
-    struct timeval msg_expiration;
-    char gcookie[128];
-    int gcookie_len;
-    char gfrom[ELA_MAX_ID_LEN + 1];
-    char groupid[ELA_MAX_ID_LEN + 1];
-    char fileid[ELA_MAX_FILE_ID_LEN + 1];
-    char recv_file[ELA_MAX_FILE_NAME_LEN + 1];
-};
-
 static CarrierContextExtra extra = {
+    .tid = 0,
     .userid = {0},
     .bundle = NULL,
     .data   = NULL,
     .len    = 0,
-    .offline_msg_cnt = 0,
-    .test_off_msg = false,
-    .test_off_msgs = false,
-    .msg_expiration = {0},
+    .test_offmsg = 0,
+    .test_offmsg_count = 0,
+    .test_offmsg_expires = {0},
     .gcookie = {0},
     .gcookie_len = 0,
     .gfrom  = {0},
@@ -108,19 +92,21 @@ void print_friend_info(const ElaFriendInfo* info, int order)
 static void idle_cb(ElaCarrier *w, void *context)
 {
     CarrierContextExtra *extra = ((TestContext*)context)->carrier->extra;
+    struct timeval now;
 
-    if (extra->test_off_msg || extra->test_off_msgs) {
-        struct timeval now = {0};
+    if (extra->test_offmsg == OffMsgCase_Single) {
 
         gettimeofday(&now, NULL);
-        if (timercmp(&now, &extra->msg_expiration, >)) {
-            if (extra->test_off_msg) {
-                extra->test_off_msg = false;
-                write_ack("expiration\n");
-            } else {
-                extra->test_off_msgs = false;
-                write_ack("%d\n", extra->offline_msg_cnt);
-            }
+        if (timercmp(&now, &extra->test_offmsg_expires, >)) {
+            write_ack("offmsg lost\n");
+            extra->test_offmsg = 0;
+        }
+    } else if(extra->test_offmsg == OffMsgCase_Bulk) {
+        gettimeofday(&now, NULL);
+        if (timercmp(&now, &extra->test_offmsg_expires, >)) {
+            write_ack("bulkoffmsg %d\n", extra->test_offmsg_count);
+            extra->test_offmsg = 0;
+            extra->test_offmsg_count = 0;
         }
     }
 }
@@ -267,13 +253,12 @@ static void friend_message_cb(ElaCarrier *w, const char *from,
     vlogD("Received message from %s", from);
     vlogD(" msg: %.*s", len, (const char *)msg);
 
-    if (!extra->test_off_msgs) {
-        if (extra->test_off_msg)
-            extra->test_off_msg = false;
-
+    if (extra->test_offmsg == OffMsgCase_Single) {
         write_ack("%.*s\n", len, msg);
-    } else
-        extra->offline_msg_cnt++;
+        extra->test_offmsg = 0;
+    } else if (extra->test_offmsg == OffMsgCase_Bulk) {
+        extra->test_offmsg_count++;
+    }
 }
 
 static void friend_invite_cb(ElaCarrier *w, const char *from, const char *bundle,
@@ -460,7 +445,7 @@ CarrierContext carrier_context = {
     .extra = &extra
 };
 
-static void* carrier_run_entry(void *arg)
+void* carrier_run_entry(void *arg)
 {
     ElaCarrier *w;
     char datadir[PATH_MAX];
@@ -518,27 +503,21 @@ static void* carrier_run_entry(void *arg)
 
 int robot_main(int argc, char *argv[])
 {
-    pthread_t tid;
+    CarrierContextExtra *extra = carrier_context.extra;
     char *cmd;
 
     if (start_cmd_listener(global_config.robot.host, global_config.robot.port) < 0)
         return -1;
 
-    pthread_create(&tid, 0, &carrier_run_entry, NULL);
+    pthread_create(&extra->tid, 0, &carrier_run_entry, NULL);
 
     do {
         cmd = read_cmd();
         do_cmd(&test_context, cmd);
-
-        if (strcmp(cmd, "killcarrier") == 0)
-            pthread_join(tid, NULL);
-
-        if (strcmp(cmd, "reborn") == 0)
-            pthread_create(&tid, 0, &carrier_run_entry, NULL);
-
     } while (strcmp(cmd, "kill"));
 
-    pthread_join(tid, NULL);
+    assert(extra->tid > 0);
+    pthread_join(extra->tid, NULL);
 
     stop_cmd_listener();
 

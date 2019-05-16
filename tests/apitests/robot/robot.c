@@ -462,20 +462,6 @@ CarrierContext carrier_context = {
 
 static void* carrier_run_entry(void *arg)
 {
-    ElaCarrier *w = (ElaCarrier *)arg;
-    int rc;
-
-    rc = ela_run(w, 10);
-    if (rc != 0) {
-        printf("Error: start carrier loop error %d.\n", ela_get_error());
-        ela_kill(w);
-    }
-
-    return NULL;
-}
-
-int robot_main(int argc, char *argv[])
-{
     ElaCarrier *w;
     char datadir[PATH_MAX];
     char logfile[PATH_MAX];
@@ -500,7 +486,7 @@ int robot_main(int argc, char *argv[])
     if (!opts.hive_bootstraps) {
         vlogE("Error: out of memory.");
         free(opts.bootstraps);
-        return -1;
+        return NULL;
     }
 
     for (i = 0; i < (int)opts.hive_bootstraps_size; i++) {
@@ -512,41 +498,47 @@ int robot_main(int argc, char *argv[])
         b->port = node->port;
     }
 
-    if (!reborn) {
-        if (start_cmd_listener(global_config.robot.host, global_config.robot.port) < 0) {
-            free(opts.bootstraps);
-            free(opts.hive_bootstraps);
-            return -1;
-        }
-    }
-
     w = ela_new(&opts, &callbacks, &test_context);
     if (!w) {
         write_ack("failed\n");
         vlogE("Carrier new error (0x%x)", ela_get_error());
-        return -1;
+        return NULL;
     }
 
     carrier_context.carrier = w;
-    pthread_create(&tid, 0, &carrier_run_entry, w);
+    rc = ela_run(w, 10);
+    if (rc != 0) {
+        printf("Error: start carrier loop error %d.\n", ela_get_error());
+        ela_kill(w);
+    }
+    carrier_context.carrier = NULL;
+
+    return NULL;
+}
+
+int robot_main(int argc, char *argv[])
+{
+    pthread_t tid;
+    char *cmd;
+
+    if (start_cmd_listener(global_config.robot.host, global_config.robot.port) < 0)
+        return -1;
+
+    pthread_create(&tid, 0, &carrier_run_entry, NULL);
 
     do {
         cmd = read_cmd();
         do_cmd(&test_context, cmd);
 
-        if (strcmp(cmd, "killcarrier") == 0) {
+        if (strcmp(cmd, "killcarrier") == 0)
             pthread_join(tid, NULL);
-            carrier_context.carrier = NULL;
-        }
 
-        if (strcmp(cmd, "reborn") == 0) {
-            reborn = true;
-            goto robot_reborn;
-        }
+        if (strcmp(cmd, "reborn") == 0)
+            pthread_create(&tid, 0, &carrier_run_entry, NULL);
+
     } while (strcmp(cmd, "kill"));
 
     pthread_join(tid, NULL);
-    carrier_context.carrier = NULL;
 
     stop_cmd_listener();
 

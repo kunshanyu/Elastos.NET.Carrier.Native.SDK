@@ -536,14 +536,17 @@ static void restartnode(TestContext *context, int argc, char *argv[])
     struct timeval now;
     extern void *carrier_run_entry(void *);
 
-    CHK_ARGS(argc == 1 || argc == 2);
+    CHK_ARGS(argc == 3);
 
     vlogI("Robot will be reborn.");
-    if (argc == 1)
+    strcpy(extra->offmsg, argv[1]);
+
+    if (atoi(argv[2]) == 1)
         extra->test_offmsg = OffMsgCase_Single;
     else {
         extra->test_offmsg = OffMsgCase_Bulk;
         extra->test_offmsg_count = 0;
+        extra->expected_offmsg_count = atoi(argv[2]);
     }
 
     gettimeofday(&now, NULL);

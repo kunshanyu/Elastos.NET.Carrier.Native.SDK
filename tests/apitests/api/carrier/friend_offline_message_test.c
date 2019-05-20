@@ -151,16 +151,13 @@ static void send_offmsg_to_friend(int count)
     cond_wait(wctxt->friend_status_cond);
     CU_ASSERT_TRUE(wctxt->friend_status == OFFLINE);
 
-    const char *out = "message-test";
+    const char *out = (count == 1) ? "message-test" : "message-tests";
     for (i = 0; i < count; i++) {
         rc = ela_send_friend_message(wctxt->carrier, robotid, out, strlen(out));
         CU_ASSERT_EQUAL_FATAL(rc, 0);
     }
 
-    if (count > 1)
-        rc = write_cmd("startnode bulkmsg\n");
-    else
-        rc = write_cmd("startnode\n");
+    rc = write_cmd("restartnode %s %d\n", out, count);
     CU_ASSERT_FATAL(rc > 0);
 
     cond_wait(wctxt->friend_status_cond);

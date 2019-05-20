@@ -58,7 +58,9 @@ static CarrierContextExtra extra = {
     .len    = 0,
     .test_offmsg = 0,
     .test_offmsg_count = 0,
+    .expected_offmsg_count = 0,
     .test_offmsg_expires = {0},
+    .offmsg = {0},
     .gcookie = {0},
     .gcookie_len = 0,
     .gfrom  = {0},
@@ -98,15 +100,18 @@ static void idle_cb(ElaCarrier *w, void *context)
 
         gettimeofday(&now, NULL);
         if (timercmp(&now, &extra->test_offmsg_expires, >)) {
-            write_ack("offmsg lost\n");
+            write_ack("offmsglost\n");
             extra->test_offmsg = 0;
+            memset(extra->offmsg, 0, sizeof(extra->offmsg));
         }
     } else if(extra->test_offmsg == OffMsgCase_Bulk) {
         gettimeofday(&now, NULL);
         if (timercmp(&now, &extra->test_offmsg_expires, >)) {
-            write_ack("bulkoffmsg %d\n", extra->test_offmsg_count);
+            write_ack("%d\n", extra->test_offmsg_count);
             extra->test_offmsg = 0;
             extra->test_offmsg_count = 0;
+            extra->expected_offmsg_count = 0;
+            memset(extra->offmsg, 0, sizeof(extra->offmsg));
         }
     }
 }
@@ -254,10 +259,24 @@ static void friend_message_cb(ElaCarrier *w, const char *from,
     vlogD(" msg: %.*s", len, (const char *)msg);
 
     if (extra->test_offmsg == OffMsgCase_Single) {
-        write_ack("%.*s\n", len, msg);
-        extra->test_offmsg = 0;
+        if (strncmp((const char*)msg, extra->offmsg, len) == 0) {
+            write_ack("%.*s\n", len, msg);
+            extra->test_offmsg = 0;
+            memset(extra->offmsg, 0, sizeof(extra->offmsg));
+        }
     } else if (extra->test_offmsg == OffMsgCase_Bulk) {
-        extra->test_offmsg_count++;
+        if (strncmp((const char*)msg, extra->offmsg, len) == 0) {
+            extra->test_offmsg_count++;
+            if (extra->test_offmsg_count == extra->expected_offmsg_count) {
+                write_ack("%d\n", extra->test_offmsg_count);
+                extra->test_offmsg = 0;
+                extra->test_offmsg_count = 0;
+                extra->expected_offmsg_count = 0;
+                memset(extra->offmsg, 0, sizeof(extra->offmsg));
+            }
+        }
+    } else {
+        write_ack("%.*s\n", len, msg);
     }
 }
 
@@ -445,7 +464,7 @@ CarrierContext carrier_context = {
     .extra = &extra
 };
 
-void* carrier_run_entry(void *arg)
+void *carrier_run_entry(void *arg)
 {
     ElaCarrier *w;
     char datadir[PATH_MAX];

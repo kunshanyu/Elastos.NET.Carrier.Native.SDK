@@ -45,7 +45,9 @@ struct CarrierContextExtra {
     int len;
     int test_offmsg;
     int test_offmsg_count;
+    int expected_offmsg_count;
     struct timeval test_offmsg_expires;
+    char offmsg[32];
     char gcookie[128];
     int gcookie_len;
     char gfrom[ELA_MAX_ID_LEN + 1];

@@ -308,22 +308,6 @@ int test_suite_init_ext(TestContext *context, bool udp_disabled)
         opts.log_file = NULL;
     }
 
-    opts.hive_bootstraps = (HiveBootstrapNode *)calloc(1, sizeof(HiveBootstrapNode) * opts.hive_bootstraps_size);
-    if (!opts.hive_bootstraps) {
-        vlogE("Error: out of memory.");
-        free(opts.bootstraps);
-        return -1;
-    }
-
-    for (i = 0; i < (int)opts.hive_bootstraps_size; i++) {
-        HiveBootstrapNode *b = &opts.hive_bootstraps[i];
-        HiveBootstrapNode *node = global_config.hive_bootstraps[i];
-
-        b->ipv4 = node->ipv4;
-        b->ipv6 = node->ipv6;
-        b->port = node->port;
-    }
-
     wctxt->carrier = ela_new(&opts, &callbacks, wctxt);
     if (!wctxt->carrier) {
         vlogE("Error: Carrier new error (0x%x)", ela_get_error());

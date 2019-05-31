@@ -467,6 +467,7 @@ CarrierContext carrier_context = {
 void *carrier_run_entry(void *arg)
 {
     ElaCarrier *w;
+    int rc;
     char datadir[PATH_MAX];
     char logfile[PATH_MAX];
     pthread_t tid;
@@ -484,22 +485,6 @@ void *carrier_run_entry(void *arg)
         sprintf(logfile, "%s/robot/robot.log", global_config.shared_options.persistent_location);
     } else {
         opts.log_file = NULL;
-    }
-
-    opts.hive_bootstraps = (HiveBootstrapNode *)calloc(1, sizeof(HiveBootstrapNode) * opts.hive_bootstraps_size);
-    if (!opts.hive_bootstraps) {
-        vlogE("Error: out of memory.");
-        free(opts.bootstraps);
-        return NULL;
-    }
-
-    for (i = 0; i < (int)opts.hive_bootstraps_size; i++) {
-        HiveBootstrapNode *b = &opts.hive_bootstraps[i];
-        HiveBootstrapNode *node = global_config.hive_bootstraps[i];
-
-        b->ipv4 = node->ipv4;
-        b->ipv6 = node->ipv6;
-        b->port = node->port;
     }
 
     w = ela_new(&opts, &callbacks, &test_context);

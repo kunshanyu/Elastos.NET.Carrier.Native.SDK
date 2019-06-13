@@ -39,6 +39,7 @@ enum {
 
 struct CarrierContextExtra {
     pthread_t tid;
+    pthread_mutex_t mutex;
     char userid[ELA_MAX_ID_LEN + 1];
     char *bundle;
     char *data;

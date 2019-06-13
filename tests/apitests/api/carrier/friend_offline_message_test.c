@@ -69,9 +69,13 @@ static void friend_connection_cb(ElaCarrier *w, const char *friendid,
 {
     CarrierContext *wctxt = (CarrierContext *)context;
 
+    pthread_mutex_lock(&wctxt->friend_status_cond->mutex);
     wctxt->friend_status = (status == ElaConnectionStatus_Connected) ?
                          ONLINE : OFFLINE;
-    cond_signal(wctxt->friend_status_cond);
+    wctxt->friend_status_cond->signaled++;
+    wctxt->friend_status_cond->has_signaled = true;
+    pthread_cond_signal(&wctxt->friend_status_cond->cond);
+    pthread_mutex_unlock(&wctxt->friend_status_cond->mutex);
 
     vlogD("Robot connection status changed -> %s", connection_str(status));
 }
@@ -106,7 +110,7 @@ static ElaCallbacks callbacks = {
 
 static Condition DEFINE_COND(ready_cond);
 static Condition DEFINE_COND(cond);
-static Condition DEFINE_COND(friend_status_cond);
+static Condition2 DEFINE_COND2(friend_status_cond);
 
 static CarrierContext carrier_context = {
     .cbs = &callbacks,
@@ -120,7 +124,7 @@ static CarrierContext carrier_context = {
 static void test_context_reset(TestContext *context)
 {
     cond_reset(context->carrier->cond);
-    cond_reset(context->carrier->friend_status_cond);
+    cond_reset2(context->carrier->friend_status_cond);
 }
 
 static TestContext test_context = {
@@ -134,6 +138,7 @@ static void send_offmsg_to_friend(int count)
 {
     CarrierContext *wctxt = test_context.carrier;
     char ack[128] = {0};
+    char buf[2][32] = {0};
     char robot_id[ELA_MAX_ID_LEN + 1] = {0};
     char robot_addr[ELA_MAX_ADDRESS_LEN + 1] = {0};
     int rc;
@@ -148,8 +153,19 @@ static void send_offmsg_to_friend(int count)
     rc = write_cmd("killnode\n");
     CU_ASSERT_FATAL(rc > 0);
 
-    cond_wait(wctxt->friend_status_cond);
-    CU_ASSERT_TRUE(wctxt->friend_status == OFFLINE);
+    rc = read_ack("%32s %32s", buf[0], buf[1]);
+    CU_ASSERT_EQUAL(rc, 2);
+    CU_ASSERT_STRING_EQUAL(buf[0], "killnode");
+    CU_ASSERT_STRING_EQUAL(buf[1], "success");
+
+    pthread_mutex_lock(&wctxt->friend_status_cond->mutex);
+    if (wctxt->friend_status_cond->signaled <= 0) {
+        pthread_cond_wait(&wctxt->friend_status_cond->cond, &wctxt->friend_status_cond->mutex);
+    }
+    wctxt->friend_status_cond->signaled--;
+    wctxt->friend_status_cond->has_signaled = false;
+    CU_ASSERT_TRUE_FATAL(wctxt->friend_status == OFFLINE);
+    pthread_mutex_unlock(&wctxt->friend_status_cond->mutex);
 
     const char *out = (count == 1) ? "message-test" : "message-tests";
     for (i = 0; i < count; i++) {
@@ -160,8 +176,14 @@ static void send_offmsg_to_friend(int count)
     rc = write_cmd("restartnode %s %d\n", out, count);
     CU_ASSERT_FATAL(rc > 0);
 
-    cond_wait(wctxt->friend_status_cond);
+    pthread_mutex_lock(&wctxt->friend_status_cond->mutex);
+    if (wctxt->friend_status_cond->signaled <= 0) {
+        pthread_cond_wait(&wctxt->friend_status_cond->cond, &wctxt->friend_status_cond->mutex);
+    }
+    wctxt->friend_status_cond->signaled--;
+    wctxt->friend_status_cond->has_signaled = false;
     CU_ASSERT_TRUE_FATAL(wctxt->friend_status == ONLINE);
+    pthread_mutex_unlock(&wctxt->friend_status_cond->mutex);
 
     rc = read_ack("%32s %45s %52s", ack, robot_id, robot_addr);
     CU_ASSERT_EQUAL(rc, 3);
@@ -177,8 +199,8 @@ static void send_offmsg_to_friend(int count)
         CU_ASSERT_EQUAL(count, recv_count);
     } else {
         char in[64] = {0};
-        rc = read_ack("%64s", in);
 
+        rc = read_ack("%64s", in);
         CU_ASSERT_EQUAL(rc, 1);
         CU_ASSERT_STRING_EQUAL(in, out);
     }

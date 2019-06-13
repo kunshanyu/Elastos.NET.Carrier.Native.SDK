@@ -52,6 +52,7 @@ static ElaFileTransferCallbacks file_transfer_cbs;
 
 static CarrierContextExtra extra = {
     .tid = 0,
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
     .userid = {0},
     .bundle = NULL,
     .data   = NULL,
@@ -96,8 +97,8 @@ static void idle_cb(ElaCarrier *w, void *context)
     CarrierContextExtra *extra = ((TestContext*)context)->carrier->extra;
     struct timeval now;
 
+    pthread_mutex_lock(&extra->mutex);
     if (extra->test_offmsg == OffMsgCase_Single) {
-
         gettimeofday(&now, NULL);
         if (timercmp(&now, &extra->test_offmsg_expires, >)) {
             write_ack("offmsglost\n");
@@ -114,6 +115,7 @@ static void idle_cb(ElaCarrier *w, void *context)
             memset(extra->offmsg, 0, sizeof(extra->offmsg));
         }
     }
+    pthread_mutex_unlock(&extra->mutex);
 }
 
 static void connection_status_cb(ElaCarrier *w, ElaConnectionStatus status,
@@ -173,9 +175,13 @@ static void friend_connection_cb(ElaCarrier *w, const char *friendid,
     vlogD("Friend %s's connection status changed -> %s",
           friendid, connection_str(status));
 
+    pthread_mutex_lock(&wctx->friend_status_cond->mutex);
     wctx->friend_status = (status == ElaConnectionStatus_Connected) ?
                         ONLINE : OFFLINE;
-    cond_signal(wctx->friend_status_cond);
+    wctx->friend_status_cond->signaled++;
+    wctx->friend_status_cond->has_signaled = true;
+    pthread_cond_signal(&wctx->friend_status_cond->cond);
+    pthread_mutex_unlock(&wctx->friend_status_cond->mutex);
 }
 
 static void friend_info_cb(ElaCarrier *w, const char *friendid,
@@ -258,6 +264,7 @@ static void friend_message_cb(ElaCarrier *w, const char *from,
     vlogD("Received message from %s", from);
     vlogD(" msg: %.*s", len, (const char *)msg);
 
+    pthread_mutex_lock(&extra->mutex);
     if (extra->test_offmsg == OffMsgCase_Single) {
         if (strncmp((const char*)msg, extra->offmsg, len) == 0) {
             write_ack("%.*s\n", len, msg);
@@ -278,6 +285,7 @@ static void friend_message_cb(ElaCarrier *w, const char *from,
     } else {
         write_ack("%.*s\n", len, msg);
     }
+    pthread_mutex_unlock(&extra->mutex);
 }
 
 static void friend_invite_cb(ElaCarrier *w, const char *from, const char *bundle,
@@ -447,7 +455,7 @@ static ElaFileTransferInfo ft_info = {
     .size = 1
 };
 
-static Condition DEFINE_COND(friend_status_cond);
+static Condition2 DEFINE_COND2(friend_status_cond);
 static Condition DEFINE_COND(cond);
 static Condition DEFINE_COND(group_cond);
 

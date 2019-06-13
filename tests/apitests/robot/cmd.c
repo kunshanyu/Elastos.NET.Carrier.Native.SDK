@@ -598,9 +598,7 @@ static void killnode(TestContext *context, int argc, char *argv[])
     vlogI("Kill robot node instance.");
     ela_kill(w);
 
-    assert(extra->tid > (pthread_t)0);
     pthread_join(extra->tid, NULL);
-    extra->tid = (pthread_t)0;
     write_ack("killnode success\n");
 }
 
@@ -631,7 +629,6 @@ static void restartnode(TestContext *context, int argc, char *argv[])
     timeradd(&now, &timeout_interval, &extra->test_offmsg_expires);
     pthread_mutex_unlock(&extra->mutex);
 
-    assert(extra->tid == (pthread_t)0);
     pthread_create(&extra->tid, 0, &carrier_run_entry, NULL);
 }
 

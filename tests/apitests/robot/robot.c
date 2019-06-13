@@ -478,8 +478,6 @@ void *carrier_run_entry(void *arg)
     int rc;
     char datadir[PATH_MAX];
     char logfile[PATH_MAX];
-    pthread_t tid;
-    char *cmd;
     bool reborn = false;
 
     ElaOptions opts = global_config.shared_options;
@@ -528,7 +526,6 @@ int robot_main(int argc, char *argv[])
         do_cmd(&test_context, cmd);
     } while (strcmp(cmd, "kill"));
 
-    assert(extra->tid > 0);
     pthread_join(extra->tid, NULL);
 
     stop_cmd_listener();

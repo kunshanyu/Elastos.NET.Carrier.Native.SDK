@@ -105,7 +105,6 @@ static inline void status_cond_reset(StatusCondition *cond)
         rc = pthread_cond_timedwait(&cond->cond, &cond->mutex, &timeout);
     } while (rc != ETIMEDOUT);
 
-    cond->friend_status = OFFLINE;
     cond->status_changed = 0;
     cond->signaled = 0;
     pthread_mutex_unlock(&cond->mutex);
